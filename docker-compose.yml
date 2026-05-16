@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  mysql-backend:
+    image: mysql:8.0
+    container_name: traffic_backend_db
+    environment:
+      MYSQL_DATABASE: backend_db
+      MYSQL_USER: backend_user
+      MYSQL_PASSWORD: backend_pass
+      MYSQL_ROOT_PASSWORD: root_password_segura
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_backend_data:/var/lib/mysql
+
+volumes:
+  mysql_backend_data:
