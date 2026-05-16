@@ -41,3 +41,9 @@ tests/
 	```bash
 	curl http://127.0.0.1:8000/api/v1/health
 	```
+
+Notas importantes:
+
+- Copia `.env.example` a `.env` y rellena las variables antes de ejecutar.
+- Para desarrollo puedes activar la creación automática de tablas poniendo `CREATE_TABLES_ON_STARTUP=true` en tu `.env`. En producción usa migraciones con Alembic en lugar de `create_all()`.
+- Recomendado: añadir `alembic` para controlar migraciones y `pytest` para tests unitarios.

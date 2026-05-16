@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     database_url: str
     engine_api_url: str
+    create_tables_on_startup: bool = False
+    log_level: str = "INFO"
+    log_file: str = "logs/app.txt"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

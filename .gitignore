@@ -34,3 +34,8 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime / local
+dev.db
+nohup.out
+uvicorn.log
