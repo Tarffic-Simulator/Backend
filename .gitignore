@@ -39,3 +39,6 @@ Thumbs.db
 dev.db
 nohup.out
 uvicorn.log
+
+# logs local
+/logs/app.txt

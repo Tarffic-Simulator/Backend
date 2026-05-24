@@ -1,8 +1,0 @@
-2026-05-15 22:03:32 INFO [-] app.main: Database tables created
-2026-05-15 22:03:32 INFO [-] app.main: Application startup complete — Backend API 0.1.0
-2026-05-15 22:05:28 INFO [-] app.main: Application shutdown complete
-2026-05-15 22:05:29 INFO [-] app.main: Database tables created
-2026-05-15 22:05:29 INFO [-] app.main: Application startup complete — Backend API 0.1.0
-2026-05-15 22:05:29 INFO [-] app.main: Application shutdown complete
-2026-05-15 22:05:30 INFO [-] app.main: Database tables created
-2026-05-15 22:05:30 INFO [-] app.main: Application startup complete — Backend API 0.1.0

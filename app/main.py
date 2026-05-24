@@ -1,3 +1,5 @@
+"""FastAPI application entrypoint and lifecycle hooks."""
+
 from fastapi import FastAPI
 from httpx import AsyncClient
 
@@ -16,16 +18,20 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    """Initialize startup resources and optionally create database tables."""
     if settings.create_tables_on_startup:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created")
 
     app.state.httpx_client = AsyncClient(timeout=5.0)
-    logger.info("Application startup complete — %s %s", settings.app_name, settings.app_version)
+    logger.info(
+        "Application startup complete — %s %s", settings.app_name, settings.app_version
+    )
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
+    """Close application resources during shutdown."""
     client: AsyncClient | None = getattr(app.state, "httpx_client", None)
     if client is not None:
         await client.aclose()
@@ -34,4 +40,5 @@ async def on_shutdown() -> None:
 
 @app.get("/", tags=["Root"])
 def read_root() -> dict[str, str]:
+    """Return a simple health-style root response."""
     return {"message": f"{settings.app_name} running"}
