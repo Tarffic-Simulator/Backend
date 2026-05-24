@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str
     engine_api_url: str
     create_tables_on_startup: bool = False
+    data_encryption_key: str | None = None
     log_level: str = "INFO"
     log_file: str = "logs/app.txt"
 
