@@ -10,7 +10,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 # Context variable to hold request id for the current context
-request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "request_id", default="-"
+)
 
 
 class RequestIdFilter(logging.Filter):

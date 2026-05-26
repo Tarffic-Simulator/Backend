@@ -1,5 +1,7 @@
-from pydantic import BaseModel
+from datetime import datetime
 from typing import Any
+
+from pydantic import BaseModel
 
 
 class SavedSimulationResponse(BaseModel):
@@ -7,5 +9,6 @@ class SavedSimulationResponse(BaseModel):
     user_id: int
     engine_simulation_id: str
     data: Any
+    created_at: datetime
 
     model_config = {"from_attributes": True}
