@@ -1,55 +1,101 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from fastapi.concurrency import run_in_threadpool
-from typing import Any
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
 from app.core.http_client import get_httpx_client
 from app.core.log_config import get_logger
-from httpx import AsyncClient
-from app.models.user import User
+from app.core.security import get_current_user
 from app.models.simulation import SavedSimulation
-from app.services.engine_client import fetch_simulation_data
+from app.models.user import User
 from app.schemas import SavedSimulationResponse
+from app.services.engine_client import fetch_simulation_data
 
 router = APIRouter()
 logger = get_logger(__name__)
 
 
-async def _save_simulation_to_db(db: Session, record: SavedSimulation) -> SavedSimulation:
-    try:
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        return record
-    except Exception:
-        db.rollback()
-        raise
+@router.get("/", response_model=list[SavedSimulationResponse])
+async def list_simulations(
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(SavedSimulation)
+        .where(SavedSimulation.user_id == current_user.id)
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()
 
 
-@router.post("/save/{simulation_id}", response_model=SavedSimulationResponse, status_code=status.HTTP_201_CREATED)
+@router.get("/{record_id}", response_model=SavedSimulationResponse)
+async def get_simulation(
+    record_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(SavedSimulation).where(
+            SavedSimulation.id == record_id,
+            SavedSimulation.user_id == current_user.id,
+        )
+    )
+    sim = result.scalar_one_or_none()
+    if sim is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Simulación no encontrada"
+        )
+    return sim
+
+
+@router.post(
+    "/save/{simulation_id}",
+    response_model=SavedSimulationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def save_engine_simulation(
     simulation_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     httpx_client: AsyncClient = Depends(get_httpx_client),
 ):
-    logger.info("User %s requested save for simulation_id=%s", current_user.username, simulation_id)
+    logger.info(
+        "User %s requested save for simulation_id=%s",
+        current_user.username,
+        simulation_id,
+    )
 
-    engine_data: Any = await fetch_simulation_data(simulation_id, client=httpx_client)
+    engine_data = await fetch_simulation_data(simulation_id, client=httpx_client)
 
-    new_record = SavedSimulation(
+    record = SavedSimulation(
         user_id=current_user.id,
         engine_simulation_id=simulation_id,
         data=engine_data,
     )
-
     try:
-        saved = await run_in_threadpool(_save_simulation_to_db, db, new_record)
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
     except Exception:
-        logger.exception("DB error saving simulation_id=%s for user %s", simulation_id, current_user.username)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al guardar la simulaci\u00f3n")
+        logger.exception(
+            "DB error saving simulation_id=%s for user %s",
+            simulation_id,
+            current_user.username,
+        )
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al guardar la simulación",
+        )
 
-    logger.info("Simulation saved: id=%s simulation_id=%s user=%s", saved.id, simulation_id, current_user.username)
-    return saved
+    logger.info(
+        "Simulation saved: id=%s simulation_id=%s user=%s",
+        record.id,
+        simulation_id,
+        current_user.username,
+    )
+    return record

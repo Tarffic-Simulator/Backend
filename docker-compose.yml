@@ -1,6 +1,18 @@
 version: '3.8'
 
 services:
+  backend:
+    build: .
+    container_name: traffic_backend_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      mysql-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   mysql-backend:
     image: mysql:8.0
     container_name: traffic_backend_db
@@ -13,6 +25,12 @@ services:
       - "3307:3306"
     volumes:
       - mysql_backend_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password_segura"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   mysql_backend_data:

@@ -1,4 +1,3 @@
-from typing import AsyncIterator
 from fastapi import Request, HTTPException
 from httpx import AsyncClient
 
@@ -14,5 +13,8 @@ def get_httpx_client(request: Request) -> AsyncClient:
     client: AsyncClient | None = getattr(request.app.state, "httpx_client", None)
     if client is None:
         # Fail fast and loudly in production instead of silently creating resources.
-        raise HTTPException(status_code=500, detail="HTTP client not initialized. Ensure application startup completed and httpx client was created.")
+        raise HTTPException(
+            status_code=500,
+            detail="HTTP client not initialized. Ensure application startup completed and httpx client was created.",
+        )
     return client
