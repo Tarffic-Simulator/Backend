@@ -5,19 +5,24 @@ set -eu
 VENV_DIR=".venv"
 REQ_FILE="requirements.txt"
 
-echo "[1/4] Verificando Python 3..."
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "Error: python3 no esta instalado o no esta en PATH."
+echo "[1/4] Verificando Python..."
+PYTHON_CMD=""
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_CMD=python
+else
+    echo "Error: python3 o python no estan instalados o no estan en PATH."
     exit 1
 fi
 
 echo "[2/4] Creando entorno virtual en ${VENV_DIR}..."
-python3 -m venv "${VENV_DIR}"
+${PYTHON_CMD} -m venv "${VENV_DIR}"
 
 echo "[3/4] Activando entorno virtual e instalando dependencias..."
 # shellcheck disable=SC1091
 . "${VENV_DIR}/bin/activate"
-python -m pip install --upgrade pip
+${PYTHON_CMD} -m pip install --upgrade pip
 
 if [ -f "${REQ_FILE}" ]; then
     pip install -r "${REQ_FILE}"
