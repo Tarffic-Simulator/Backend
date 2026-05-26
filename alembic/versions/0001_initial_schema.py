@@ -4,6 +4,7 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-05-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -29,7 +30,9 @@ def upgrade() -> None:
         sa.Column("engine_simulation_id", sa.String(100), nullable=False),
         sa.Column("data", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("user_id", "engine_simulation_id", name="uq_user_simulation"),
+        sa.UniqueConstraint(
+            "user_id", "engine_simulation_id", name="uq_user_simulation"
+        ),
     )
 
 
