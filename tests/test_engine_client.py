@@ -2,7 +2,6 @@
 
 import pytest
 
-from types import SimpleNamespace
 from fastapi import HTTPException
 
 from app.services.engine_client import fetch_simulation_data
