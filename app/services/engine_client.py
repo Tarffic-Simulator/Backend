@@ -31,7 +31,9 @@ async def _get(
             logger.debug("Engine GET %s (attempt %d/%d)", url, attempt + 1, retries + 1)
             response = await client.get(url, timeout=timeout)
             if response.status_code != 200:
-                logger.warning("Engine returned %d for GET %s", response.status_code, url)
+                logger.warning(
+                    "Engine returned %d for GET %s", response.status_code, url
+                )
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"Engine error: {response.text}",
@@ -41,9 +43,18 @@ async def _get(
             raise
         except Exception as exc:
             if attempt == retries:
-                logger.error("Engine unreachable at %s after %d attempts: %s", url, retries + 1, exc)
-                raise HTTPException(status_code=502, detail=f"Engine unreachable: {exc}")
-            logger.warning("Engine attempt %d failed for %s: %s — retrying", attempt + 1, url, exc)
+                logger.error(
+                    "Engine unreachable at %s after %d attempts: %s",
+                    url,
+                    retries + 1,
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=502, detail=f"Engine unreachable: {exc}"
+                )
+            logger.warning(
+                "Engine attempt %d failed for %s: %s — retrying", attempt + 1, url, exc
+            )
             await asyncio.sleep(0.5 * (attempt + 1))
 
 
@@ -60,10 +71,14 @@ async def _post(
     url = f"{settings.engine_api_url}{path}"
     for attempt in range(retries + 1):
         try:
-            logger.debug("Engine POST %s (attempt %d/%d)", url, attempt + 1, retries + 1)
+            logger.debug(
+                "Engine POST %s (attempt %d/%d)", url, attempt + 1, retries + 1
+            )
             response = await client.post(url, json=payload, timeout=timeout)
             if response.status_code != expected_status:
-                logger.warning("Engine returned %d for POST %s", response.status_code, url)
+                logger.warning(
+                    "Engine returned %d for POST %s", response.status_code, url
+                )
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"Engine error: {response.text}",
@@ -73,9 +88,18 @@ async def _post(
             raise
         except Exception as exc:
             if attempt == retries:
-                logger.error("Engine unreachable at %s after %d attempts: %s", url, retries + 1, exc)
-                raise HTTPException(status_code=502, detail=f"Engine unreachable: {exc}")
-            logger.warning("Engine attempt %d failed for %s: %s — retrying", attempt + 1, url, exc)
+                logger.error(
+                    "Engine unreachable at %s after %d attempts: %s",
+                    url,
+                    retries + 1,
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=502, detail=f"Engine unreachable: {exc}"
+                )
+            logger.warning(
+                "Engine attempt %d failed for %s: %s — retrying", attempt + 1, url, exc
+            )
             await asyncio.sleep(0.5 * (attempt + 1))
 
 

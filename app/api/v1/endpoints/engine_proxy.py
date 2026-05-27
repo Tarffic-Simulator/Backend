@@ -66,7 +66,9 @@ async def get_geographic_area_topology(
     current_user: User = Depends(get_current_user),
     client: AsyncClient = Depends(get_httpx_client),
 ) -> dict[str, Any]:
-    logger.debug("User %s fetching topology for area_id=%s", current_user.username, area_id)
+    logger.debug(
+        "User %s fetching topology for area_id=%s", current_user.username, area_id
+    )
     return await fetch_geographic_area_topology(area_id, client)
 
 
