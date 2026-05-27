@@ -1,6 +1,10 @@
 """Client helpers for communicating with the Engine service."""
 
+from __future__ import annotations
+
 import asyncio
+from typing import Any
+
 from fastapi import HTTPException
 from httpx import AsyncClient
 
@@ -9,53 +13,128 @@ from app.core.log_config import get_logger
 
 logger = get_logger(__name__)
 
+_RETRIES_DEFAULT = 2
+_TIMEOUT_DEFAULT = 10.0
 
-async def fetch_simulation_data(
-    simulation_id: str,
+
+async def _get(
     client: AsyncClient,
-    retries: int = 2,
-) -> dict:
-    """Fetch simulation data from the Engine service with retry handling."""
-    url = f"{settings.engine_api_url}/simulations/{simulation_id}"
-    timeout_seconds = 5.0
+    path: str,
+    *,
+    retries: int = _RETRIES_DEFAULT,
+    timeout: float = _TIMEOUT_DEFAULT,
+) -> dict[str, Any]:
+    """GET helper with retry/back-off against the Engine base URL."""
+    url = f"{settings.engine_api_url}{path}"
     for attempt in range(retries + 1):
         try:
-            logger.debug(
-                "Fetching simulation_id=%s from engine (attempt %d/%d)",
-                simulation_id,
-                attempt + 1,
-                retries + 1,
-            )
-            response = await client.get(url, timeout=timeout_seconds)
+            logger.debug("Engine GET %s (attempt %d/%d)", url, attempt + 1, retries + 1)
+            response = await client.get(url, timeout=timeout)
             if response.status_code != 200:
-                logger.warning(
-                    "Engine returned %d for simulation_id=%s",
-                    response.status_code,
-                    simulation_id,
-                )
+                logger.warning("Engine returned %d for GET %s", response.status_code, url)
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail="Error al contactar al Engine",
+                    detail=f"Engine error: {response.text}",
                 )
-            logger.info("Engine response OK for simulation_id=%s", simulation_id)
             return response.json()
         except HTTPException:
             raise
         except Exception as exc:
             if attempt == retries:
-                logger.error(
-                    "Engine unreachable for simulation_id=%s after %d attempts: %s",
-                    simulation_id,
-                    retries + 1,
-                    exc,
-                )
-                raise HTTPException(
-                    status_code=502, detail=f"Engine unreachable: {str(exc)}"
-                )
-            logger.warning(
-                "Engine attempt %d failed for simulation_id=%s: %s — retrying",
-                attempt + 1,
-                simulation_id,
-                exc,
-            )
+                logger.error("Engine unreachable at %s after %d attempts: %s", url, retries + 1, exc)
+                raise HTTPException(status_code=502, detail=f"Engine unreachable: {exc}")
+            logger.warning("Engine attempt %d failed for %s: %s — retrying", attempt + 1, url, exc)
             await asyncio.sleep(0.5 * (attempt + 1))
+
+
+async def _post(
+    client: AsyncClient,
+    path: str,
+    payload: dict[str, Any],
+    *,
+    expected_status: int = 201,
+    retries: int = _RETRIES_DEFAULT,
+    timeout: float = _TIMEOUT_DEFAULT,
+) -> dict[str, Any]:
+    """POST helper with retry/back-off against the Engine base URL."""
+    url = f"{settings.engine_api_url}{path}"
+    for attempt in range(retries + 1):
+        try:
+            logger.debug("Engine POST %s (attempt %d/%d)", url, attempt + 1, retries + 1)
+            response = await client.post(url, json=payload, timeout=timeout)
+            if response.status_code != expected_status:
+                logger.warning("Engine returned %d for POST %s", response.status_code, url)
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Engine error: {response.text}",
+                )
+            return response.json()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            if attempt == retries:
+                logger.error("Engine unreachable at %s after %d attempts: %s", url, retries + 1, exc)
+                raise HTTPException(status_code=502, detail=f"Engine unreachable: {exc}")
+            logger.warning("Engine attempt %d failed for %s: %s — retrying", attempt + 1, url, exc)
+            await asyncio.sleep(0.5 * (attempt + 1))
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+async def fetch_geographic_areas(client: AsyncClient) -> list[dict[str, Any]]:
+    """Return the list of available geographic areas from the Engine."""
+    return await _get(client, "/geographic-areas")
+
+
+async def fetch_geographic_area_topology(
+    area_id: str, client: AsyncClient
+) -> dict[str, Any]:
+    """Return the full topology for a geographic area."""
+    return await _get(client, f"/geographic-areas/{area_id}/topology")
+
+
+async def create_engine_simulation(
+    payload: dict[str, Any], client: AsyncClient
+) -> dict[str, Any]:
+    """Create a new simulation in the Engine and return its record."""
+    return await _post(client, "/simulations", payload, expected_status=201)
+
+
+async def fetch_simulation_data(
+    simulation_id: str,
+    client: AsyncClient,
+    retries: int = _RETRIES_DEFAULT,
+) -> dict[str, Any]:
+    """Fetch a simulation record from the Engine (kept for backwards compat)."""
+    return await _get(client, f"/simulations/{simulation_id}", retries=retries)
+
+
+async def cancel_engine_simulation(
+    simulation_id: str, client: AsyncClient
+) -> dict[str, Any]:
+    """Send a cancel request to the Engine for the given simulation."""
+    url = f"{settings.engine_api_url}/simulations/{simulation_id}/cancel"
+    try:
+        logger.debug("Engine POST cancel for simulation_id=%s", simulation_id)
+        response = await client.post(url, timeout=_TIMEOUT_DEFAULT)
+        if response.status_code not in (200, 409):
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Engine error: {response.text}",
+            )
+        return response.json()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Engine unreachable while cancelling %s: %s", simulation_id, exc)
+        raise HTTPException(status_code=502, detail=f"Engine unreachable: {exc}")
+
+
+async def fetch_simulation_steps(
+    simulation_id: str, client: AsyncClient
+) -> list[dict[str, Any]]:
+    """Return all recorded steps for a simulation from the Engine."""
+    return await _get(client, f"/simulations/{simulation_id}/steps")
