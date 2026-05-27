@@ -9,7 +9,12 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.limiter import limiter
 from app.core.log_config import get_logger
-from app.core.security import create_access_token, get_current_user, get_password_hash, verify_password
+from app.core.security import (
+    create_access_token,
+    get_current_user,
+    get_password_hash,
+    verify_password,
+)
 from app.models.user import User
 from app.schemas import Token, UserCreate, UserOut
 
