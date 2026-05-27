@@ -9,9 +9,9 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.limiter import limiter
 from app.core.log_config import get_logger
-from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.security import create_access_token, get_current_user, get_password_hash, verify_password
 from app.models.user import User
-from app.schemas import Token, UserCreate
+from app.schemas import Token, UserCreate, UserOut
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -70,3 +70,9 @@ async def login(
     )
     logger.info("User logged in: %s", user.username)
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=UserOut)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Retrieve details of the currently authenticated user."""
+    return current_user
