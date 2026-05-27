@@ -99,3 +99,57 @@ async def save_engine_simulation(
         current_user.username,
     )
     return record
+
+
+@router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_simulation(
+    record_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a saved simulation by its database record ID."""
+    logger.info(
+        "User %s requested delete for simulation record_id=%d",
+        current_user.username,
+        record_id,
+    )
+
+    result = await db.execute(
+        select(SavedSimulation).where(
+            SavedSimulation.id == record_id,
+            SavedSimulation.user_id == current_user.id,
+        )
+    )
+    sim = result.scalar_one_or_none()
+    if sim is None:
+        logger.warning(
+            "Simulation record_id=%d not found or not owned by user %s",
+            record_id,
+            current_user.username,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Simulación no encontrada",
+        )
+
+    try:
+        await db.delete(sim)
+        await db.commit()
+    except Exception:
+        logger.exception(
+            "DB error deleting simulation record_id=%d for user %s",
+            record_id,
+            current_user.username,
+        )
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al eliminar la simulación",
+        )
+
+    logger.info(
+        "Simulation record_id=%d successfully deleted by user %s",
+        record_id,
+        current_user.username,
+    )
+    return None
