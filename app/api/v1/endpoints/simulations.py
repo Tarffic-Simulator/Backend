@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -80,6 +81,17 @@ async def save_engine_simulation(
         db.add(record)
         await db.commit()
         await db.refresh(record)
+    except IntegrityError:
+        logger.warning(
+            "Duplicate simulation save blocked for simulation_id=%s user=%s",
+            simulation_id,
+            current_user.username,
+        )
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La simulación ya estaba guardada",
+        )
     except Exception:
         logger.exception(
             "DB error saving simulation_id=%s for user %s",

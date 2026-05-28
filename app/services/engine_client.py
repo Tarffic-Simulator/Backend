@@ -17,6 +17,26 @@ _RETRIES_DEFAULT = 2
 _TIMEOUT_DEFAULT = 10.0
 
 
+def _engine_error_detail(response: Any) -> str:
+    """Extract the most useful error message from an Engine response."""
+    try:
+        payload = response.json()
+    except Exception:
+        return response.text.strip() or f"Engine error ({response.status_code})"
+
+    if isinstance(payload, dict):
+        for key in ("detail", "message", "error"):
+            message = payload.get(key)
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        return str(payload)
+
+    if payload is None:
+        return f"Engine error ({response.status_code})"
+
+    return str(payload)
+
+
 async def _get(
     client: AsyncClient,
     path: str,
@@ -36,7 +56,7 @@ async def _get(
                 )
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"Engine error: {response.text}",
+                    detail=f"Engine error: {_engine_error_detail(response)}",
                 )
             return response.json()
         except HTTPException:
@@ -81,7 +101,7 @@ async def _post(
                 )
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=f"Engine error: {response.text}",
+                    detail=f"Engine error: {_engine_error_detail(response)}",
                 )
             return response.json()
         except HTTPException:
@@ -134,6 +154,24 @@ async def fetch_simulation_data(
 ) -> dict[str, Any]:
     """Fetch a simulation record from the Engine (kept for backwards compat)."""
     return await _get(client, f"/simulations/{simulation_id}", retries=retries)
+
+
+async def check_engine_availability(client: AsyncClient) -> dict[str, Any]:
+    """Probe the Engine health endpoint and return a normalized status payload."""
+    url = f"{settings.engine_api_url}/health"
+    try:
+        response = await client.get(url, timeout=_TIMEOUT_DEFAULT)
+        if response.status_code == 200:
+            return {"status": "ok"}
+
+        return {
+            "status": "error",
+            "detail": _engine_error_detail(response),
+            "status_code": response.status_code,
+        }
+    except Exception as exc:
+        logger.warning("Engine health probe failed for %s: %s", url, exc)
+        return {"status": "error", "detail": str(exc), "status_code": 502}
 
 
 async def cancel_engine_simulation(

@@ -4,14 +4,18 @@ import pytest
 
 from fastapi import HTTPException
 
-from app.services.engine_client import fetch_simulation_data
+from app.services.engine_client import (
+    check_engine_availability,
+    fetch_simulation_data,
+)
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: dict):
+    def __init__(self, status_code: int, payload):
         """Create a minimal HTTP-like response for test scenarios."""
         self.status_code = status_code
         self._payload = payload
+        self.text = str(payload)
 
     def json(self):
         """Return the configured JSON payload."""
@@ -59,3 +63,36 @@ async def test_fetch_simulation_failure_after_retries():
     with pytest.raises(HTTPException) as excinfo:
         await fetch_simulation_data("sim3", client=client, retries=2)
     assert excinfo.value.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_fetch_simulation_surfaces_specific_engine_error():
+    """It preserves the Engine error detail when the service responds with one."""
+    client = FakeClient([FakeResponse(404, {"detail": "Simulación no encontrada"})])
+
+    with pytest.raises(HTTPException) as excinfo:
+        await fetch_simulation_data("sim404", client=client, retries=0)
+
+    assert excinfo.value.status_code == 404
+    assert "Simulación no encontrada" in str(excinfo.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_check_engine_availability_success():
+    """It reports the Engine as available when health responds with 200."""
+    client = FakeClient([FakeResponse(200, {"status": "ok"})])
+
+    result = await check_engine_availability(client)
+
+    assert result == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_check_engine_availability_failure():
+    """It reports a degraded Engine when health probing raises an error."""
+    client = FakeClient([Exception("down")])
+
+    result = await check_engine_availability(client)
+
+    assert result["status"] == "error"
+    assert result["status_code"] == 502

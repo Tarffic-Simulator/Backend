@@ -1,6 +1,6 @@
 # Backend API — Dashboard de Documentación
 
-> Documentación técnica completa del proyecto. Última actualización: 2026-05-25.
+> Documentación técnica completa del proyecto. Última actualización: 2026-05-28.
 
 ---
 
@@ -39,6 +39,7 @@ FastAPI backend con autenticación JWT, base de datos MySQL vía SQLAlchemy ORM,
 - **Cifrado en reposo:** Fernet (cryptography)
 - **HTTP client:** httpx `AsyncClient`
 - **Logging:** Python `logging` + RotatingFileHandler + request ID
+- **Rate limiting:** slowapi
 
 ---
 
@@ -71,8 +72,10 @@ Backend/
 │   └── services/
 │       └── engine_client.py           # fetch_simulation_data() con reintentos
 ├── tests/
+│   ├── conftest.py                   # Variables de entorno de test
+│   ├── test_endpoints.py             # Healthcheck, auth y simulaciones
 │   ├── test_crypto.py                 # Roundtrip encrypt/decrypt
-│   └── test_engine_client.py          # Retry logic y manejo de errores
+│   └── test_engine_client.py          # Retry logic, errors y health probe
 ├── .env.example
 ├── requirements.txt
 ├── setup.sh
@@ -320,13 +323,7 @@ Ejemplo de línea de log:
 ---
 
 **`get_logger(name) → Logger`**
-
-Retorna un logger estándar nombrado. Uso en cada módulo:
-```python
-logger = get_logger(__name__)
-```
-
----
+ **Rate limiting:** slowapi
 
 **`RequestIdMiddleware` — Middleware FastAPI**
 
@@ -334,7 +331,7 @@ Se registra en `main.py` con `app.add_middleware(RequestIdMiddleware)`.
 
 Flujo por cada request:
 1. Lee header `X-Request-ID` o genera un UUID nuevo.
-2. Guarda el ID en `request_id_ctx` (disponible para todos los logs del request).
+{"status": "ok", "db": "ok", "engine": "ok"}
 3. Llama al siguiente middleware/endpoint.
 4. Limpia el contexto en `finally`.
 5. Añade `X-Request-ID` al response header.
@@ -355,7 +352,7 @@ Modelos ORM que mapean a tablas de la base de datos. Todos heredan de `Base`.
 | `username` | VARCHAR(50) | UNIQUE, NOT NULL, INDEX | Nombre de usuario |
 | `hashed_password` | VARCHAR(255) | NOT NULL | Hash bcrypt |
 
----
+ 4. Guarda en DB de forma asíncrona.
 
 ### `SavedSimulation` — `app/models/simulation.py`
 
@@ -364,7 +361,8 @@ Modelos ORM que mapean a tablas de la base de datos. Todos heredan de `Base`.
 | Columna | Tipo SQL | Restricciones | Descripción |
 |---------|----------|---------------|-------------|
 | `id` | INTEGER | PK, AUTO_INCREMENT, INDEX | Identificador único |
-| `user_id` | INTEGER | FK → `users.id` | Usuario propietario |
+| 409 | La simulación ya estaba guardada para ese usuario |
+| 500 | Error al guardar en DB |
 | `engine_simulation_id` | VARCHAR(100) | NOT NULL | ID en el servicio Engine |
 | `data` | TEXT | NOT NULL | JSON cifrado con Fernet |
 
@@ -382,14 +380,9 @@ El endpoint recibe y devuelve un `dict` normal; el cifrado ocurre completamente 
 ---
 
 ## 5. Schemas
-
-Modelos Pydantic para validación de request/response. Separados de los modelos ORM.
-
 ### `UserCreate` — request body de registro
 
 ```python
-class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
 ```
 
@@ -400,6 +393,9 @@ class Token(BaseModel):
     access_token: str
     token_type: str   # siempre "bearer"
 ```
+| `test_fetch_simulation_surfaces_specific_engine_error` | Engine responde 404 con detalle | Conserva el mensaje específico del Engine |
+| `test_check_engine_availability_success` | `/health` del Engine responde 200 | Reporta `{"status": "ok"}` |
+| `test_check_engine_availability_failure` | El probe falla por red | Reporta estado `error` y status code 502 |
 
 ### `UserOut` — datos públicos del usuario
 
@@ -457,9 +453,16 @@ Response:
 
 Response:
 ```json
-{"status": "ok"}
+{"status": "ok", "db": "ok", "engine": "ok"}
 ```
-Sin autenticación. Usado por load balancers y monitoreo.
+Sin autenticación. Verifica la base de datos y también la disponibilidad del Engine.
+
+Si una de las dos partes falla, el response pasa a `degraded` y añade `engine_detail` cuando el problema viene del Engine.
+
+Ejemplo degradado:
+```json
+{"status": "degraded", "db": "ok", "engine": "error", "engine_detail": "engine down"}
+```
 
 ---
 
@@ -546,7 +549,7 @@ username=john_doe&password=secure123
 1. Registra el request (log info).
 2. Llama `fetch_simulation_data(simulation_id, client)` → obtiene datos del Engine.
 3. Crea objeto `SavedSimulation` con `data=engine_data` (cifrado automático por ORM).
-4. Guarda en DB via `run_in_threadpool` (evita bloquear el event loop).
+4. Guarda en DB de forma asíncrona.
 5. Retorna el registro guardado (data descifrada por ORM).
 
 **Response `201`:**
@@ -568,6 +571,7 @@ username=john_doe&password=secure123
 | 401 | Token inválido o ausente |
 | 500 | httpx_client no inicializado |
 | 502 | Engine no disponible (tras reintentos) |
+| 409 | La simulación ya estaba guardada para ese usuario |
 | 500 | Error al guardar en DB |
 
 ---
@@ -576,13 +580,18 @@ username=john_doe&password=secure123
 
 ### `engine_client.py` — `app/services/engine_client.py`
 
-**Función:** `fetch_simulation_data(simulation_id, client, retries=2) → dict`
+**Funciones principales:** `fetch_simulation_data()`, `check_engine_availability()`, `create_engine_simulation()`
 
-Obtiene datos de simulación del servicio Engine con manejo de reintentos.
+Obtiene datos del Engine con manejo de reintentos, normaliza mensajes de error del servicio remoto y expone un probe de health para el endpoint de monitoreo.
 
 **URL construida:**
 ```
 {settings.engine_api_url}/simulations/{simulation_id}
+```
+
+Para validar disponibilidad general del Engine se usa:
+```
+{settings.engine_api_url}/health
 ```
 
 **Lógica de reintentos:**
@@ -606,6 +615,17 @@ Intento 2  →  éxito → retorna dict
 | Status != 200 del Engine | Propaga ese status code inmediatamente |
 | Timeout / error de red (< reintentos) | Reintenta con backoff |
 | Timeout / error de red (todos agotados) | `502 Bad Gateway` |
+
+**`check_engine_availability(client) → dict`**
+
+- Hace un GET a `/health` del Engine.
+- Si responde `200`, devuelve `{"status": "ok"}`.
+- Si responde con otro status o falla la conexión, devuelve `{"status": "error", ...}` con detalle y status code.
+
+**Normalización de errores remotos:**
+
+- Intenta leer `detail`, `message` o `error` del JSON de respuesta.
+- Si no hay JSON, usa el texto plano o un mensaje genérico.
 
 ---
 
@@ -631,6 +651,23 @@ Usa `FakeClient` y `FakeResponse` para simular respuestas HTTP sin red real.
 | `test_fetch_simulation_success` | Engine responde 200 al primer intento | Retorna el JSON del Engine |
 | `test_fetch_simulation_retries_and_success` | Primer intento falla, segundo OK | Retorna resultado, confirma 2 llamadas |
 | `test_fetch_simulation_failure_after_retries` | Todos los intentos fallan | Lanza `HTTPException` con status 502 |
+| `test_fetch_simulation_surfaces_specific_engine_error` | Engine responde 404 con detalle | Conserva el mensaje específico del Engine |
+| `test_check_engine_availability_success` | `/health` del Engine responde 200 | Reporta `{"status": "ok"}` |
+| `test_check_engine_availability_failure` | El probe falla por red | Reporta estado `error` y status code 502 |
+
+### `tests/test_endpoints.py`
+
+Pruebas de integración con `TestClient`, `AsyncMock` y overrides de dependencias.
+
+| Test | Escenario | Verifica |
+|------|-----------|----------|
+| `test_get_me_success` | Usuario autenticado | Retorna `id` y `username` |
+| `test_get_me_unauthorized` | Sin override de auth | Retorna `401` |
+| `test_healthcheck_reports_engine_ok` | DB y Engine OK | Retorna `{"status": "ok", "db": "ok", "engine": "ok"}` |
+| `test_healthcheck_reports_engine_degraded` | Engine no responde | Retorna `degraded` y detalle |
+| `test_delete_simulation_success` | Existe simulación propia | Elimina y retorna `204` |
+| `test_delete_simulation_not_found` | No existe o no es del usuario | Retorna `404` |
+| `test_save_simulation_duplicate_returns_conflict` | `IntegrityError` por duplicado | Retorna `409` y hace rollback |
 
 ---
 
@@ -659,6 +696,17 @@ POST /api/v1/auth/login (form-data)
   └─ Response 200: {"access_token": "...", "token_type": "bearer"}
 ```
 
+### Healthcheck
+
+```
+GET /api/v1/health
+  │
+  ├─ DB: SELECT 1
+  ├─ Engine: GET {engine_url}/health
+  ├─ Si ambos OK → status = ok
+  └─ Si alguno falla → status = degraded + detalle del Engine cuando aplica
+```
+
 ### Guardar simulación (endpoint protegido)
 
 ```
@@ -674,6 +722,7 @@ POST /api/v1/simulations/save/{sim_id}
   │     └─ EncryptedJSON.process_bind_param → encrypt_json_payload(dict)
   ├─ DB: INSERT INTO saved_simulations (cifrado)
   ├─ DB: SELECT saved_simulations  →  decrypt_json_payload → dict
+  ├─ Si hay `IntegrityError` por duplicado → 409 Conflict
   └─ Response 201: SavedSimulationResponse (data descifrada)
 ```
 
@@ -722,11 +771,14 @@ Archivo: `requirements.txt`
 | `fastapi` | latest | Framework web |
 | `sqlalchemy` | 2.0.49 | ORM |
 | `pymysql` | 1.1.3 | Driver MySQL |
+| `aiomysql` | latest | Driver async MySQL para SQLAlchemy |
+| `aiosqlite` | latest | Driver async SQLite para tests |
 | `httpx` | 0.28.1 | Cliente HTTP async |
 | `python-jose` | 3.5.0 | Encoding/decoding JWT |
 | `passlib` | 1.7.4 | Wrapper de hashing de passwords |
 | `bcrypt` | 5.0.0 | Algoritmo bcrypt |
 | `cryptography` | 48.0.0 | Fernet (cifrado simétrico) |
+| `slowapi` | latest | Rate limiting |
 | `pytest` | 8.4.2 | Framework de tests |
 | `pytest-asyncio` | 1.3.0 | Soporte async en tests |
 
@@ -741,6 +793,8 @@ Archivo: `requirements.txt`
 | Cifrado en reposo | Fernet simétrico — datos de simulaciones cifrados en DB |
 | Clave de cifrado | Derivada via SHA-256 de `DATA_ENCRYPTION_KEY` o `SECRET_KEY` |
 | Mensajes de error | Genéricos en auth — no revelan si el username existe |
+| Healthcheck | Valida DB y Engine, responde `ok` o `degraded` |
+| Errores Engine | Normaliza `detail` / `message` / `error` del servicio remoto |
 | Trazabilidad | Request ID en todos los logs y en headers de respuesta |
 | Recursos HTTP | AsyncClient compartido con timeout de 5s |
 | Transacciones | `autocommit=False`, rollback explícito en errores |
