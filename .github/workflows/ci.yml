@@ -1,20 +1,21 @@
 # =============================================================================
-# CI — Repositorio Engine
-# Archivo a colocar en: Tarffic-Simulator/Engine/.github/workflows/ci.yml
+# CI — Repositorio Backend
+# Archivo a colocar en: Tarffic-Simulator/Backend/.github/workflows/ci.yml
 # =============================================================================
 name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, update_backend]
   pull_request:
     branches: [main, develop]
 
 jobs:
   ci:
-    name: Engine CI
-    uses: Tarffic-Simulator/Workflow/.github/workflows/reusable-engine-ci.yml@main
+    name: Backend CI
+    uses: Tarffic-Simulator/Workflow/.github/workflows/reusable-backend-ci.yml@main
     with:
+      language: python
       python-version: "3.12"
     secrets: inherit
 
@@ -29,7 +30,7 @@ jobs:
         with:
           token: ${{ secrets.DEVOPS_DISPATCH_TOKEN }}
           repository: Tarffic-Simulator/Workflow
-          event-type: engine-push
+          event-type: backend-push
           client-payload: >
             {
               "sha": "${{ github.sha }}",
