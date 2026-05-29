@@ -1,34 +1,39 @@
+# =============================================================================
+# CI — Repositorio Engine
+# Archivo a colocar en: Tarffic-Simulator/Engine/.github/workflows/ci.yml
+# =============================================================================
 name: CI
 
 on:
   push:
-    branches: [main, update_backend]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
-  test:
+  ci:
+    name: Engine CI
+    uses: Tarffic-Simulator/Workflow/.github/workflows/reusable-engine-ci.yml@main
+    with:
+      python-version: "3.12"
+    secrets: inherit
+
+  notify:
+    name: Notify DevOps
+    needs: ci
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - name: Dispatch event to Workflow repo
+        uses: peter-evans/repository-dispatch@v3
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Lint (ruff)
-        run: ruff check .
-
-      - name: Format check (ruff)
-        run: ruff format --check .
-
-      - name: Run tests
-        env:
-          SECRET_KEY: ci-test-secret-key-32-chars-minimum
-          DATABASE_URL: sqlite:///./test.db
-          ENGINE_API_URL: http://engine-service:8000
-        run: pytest --tb=short
+          token: ${{ secrets.DEVOPS_DISPATCH_TOKEN }}
+          repository: Tarffic-Simulator/Workflow
+          event-type: engine-push
+          client-payload: >
+            {
+              "sha": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}",
+              "actor": "${{ github.actor }}",
+              "status": "success"
+            }
