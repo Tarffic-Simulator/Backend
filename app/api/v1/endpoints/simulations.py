@@ -1,7 +1,16 @@
+"""Endpoints for managing saved simulations in the Backend database.
+
+These routes handle the Backend's own persistence layer (saved_simulations
+table).  Engine interaction (create / cancel / steps) lives in engine_proxy.py.
+The one exception is POST /save/{simulation_id}, which fetches live data from
+the Engine and persists it locally.
+"""
+
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,28 +26,42 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
-@router.get("/", response_model=list[SavedSimulationResponse])
+# ---------------------------------------------------------------------------
+# List / retrieve saved simulations
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/",
+    response_model=list[SavedSimulationResponse],
+    summary="List saved simulations for the current user",
+)
 async def list_simulations(
     skip: int = 0,
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> list[SavedSimulation]:
     result = await db.execute(
         select(SavedSimulation)
         .where(SavedSimulation.user_id == current_user.id)
+        .order_by(SavedSimulation.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
     return result.scalars().all()
 
 
-@router.get("/{record_id}", response_model=SavedSimulationResponse)
-async def get_simulation(
+@router.get(
+    "/{record_id}",
+    response_model=SavedSimulationResponse,
+    summary="Get a single saved simulation by its database record ID",
+)
+async def get_saved_simulation(
     record_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> SavedSimulation:
     result = await db.execute(
         select(SavedSimulation).where(
             SavedSimulation.id == record_id,
@@ -48,27 +71,47 @@ async def get_simulation(
     sim = result.scalar_one_or_none()
     if sim is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Simulación no encontrada"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Simulación no encontrada",
         )
     return sim
+
+
+# ---------------------------------------------------------------------------
+# Save / delete
+# ---------------------------------------------------------------------------
 
 
 @router.post(
     "/save/{simulation_id}",
     response_model=SavedSimulationResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Fetch a simulation from the Engine and persist it locally",
 )
 async def save_engine_simulation(
     simulation_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     httpx_client: AsyncClient = Depends(get_httpx_client),
-):
+) -> SavedSimulation:
     logger.info(
         "User %s requested save for simulation_id=%s",
         current_user.username,
         simulation_id,
     )
+
+    # Check for duplicate before hitting the Engine
+    existing = await db.execute(
+        select(SavedSimulation).where(
+            SavedSimulation.user_id == current_user.id,
+            SavedSimulation.engine_simulation_id == simulation_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La simulación ya fue guardada anteriormente",
+        )
 
     engine_data = await fetch_simulation_data(simulation_id, client=httpx_client)
 
@@ -81,17 +124,6 @@ async def save_engine_simulation(
         db.add(record)
         await db.commit()
         await db.refresh(record)
-    except IntegrityError:
-        logger.warning(
-            "Duplicate simulation save blocked for simulation_id=%s user=%s",
-            simulation_id,
-            current_user.username,
-        )
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="La simulación ya estaba guardada",
-        )
     except Exception:
         logger.exception(
             "DB error saving simulation_id=%s for user %s",
@@ -113,13 +145,16 @@ async def save_engine_simulation(
     return record
 
 
-@router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{record_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a saved simulation by its database record ID",
+)
 async def delete_simulation(
     record_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
-    """Delete a saved simulation by its database record ID."""
+) -> None:
     logger.info(
         "User %s requested delete for simulation record_id=%d",
         current_user.username,

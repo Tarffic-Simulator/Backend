@@ -17,7 +17,7 @@ from app.core.http_client import get_httpx_client
 from app.core.log_config import get_logger
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.engine import (
+from app.schemas.engine_schemas import (
     CreateSimulationRequest,
     GeographicAreaSummaryResponse,
     GeographicAreaTopologyResponse,

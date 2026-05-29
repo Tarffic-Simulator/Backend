@@ -22,11 +22,21 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+def _ensure_bcrypt_length(password: str) -> None:
+    # bcrypt only supports 72 bytes; avoid runtime ValueError
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña supera el limite de 72 bytes",
+        )
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
 async def register(
     request: Request, payload: UserCreate, db: AsyncSession = Depends(get_db)
 ):
+    _ensure_bcrypt_length(payload.password)
     result = await db.execute(select(User).where(User.username == payload.username))
     if result.scalar_one_or_none():
         logger.warning("Register attempt for existing username: %s", payload.username)
@@ -60,6 +70,7 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
+    _ensure_bcrypt_length(form_data.password)
     result = await db.execute(select(User).where(User.username == form_data.username))
     user = result.scalar_one_or_none()
     if not user or not verify_password(form_data.password, user.hashed_password):
