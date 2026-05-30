@@ -212,3 +212,18 @@ async def delete_simulation(
         current_user.username,
     )
     return None
+
+@router.delete("/simulations/{simulation_id}", status_code=204)
+def delete_simulation(
+    simulation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    sim = db.query(SavedSimulation).filter(
+        SavedSimulation.id == simulation_id,
+        SavedSimulation.user_id == current_user.id
+    ).first()
+    if not sim:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+    db.delete(sim)
+    db.commit()
