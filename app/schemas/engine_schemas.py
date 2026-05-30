@@ -88,9 +88,7 @@ class CreateSimulationRequest(BaseModel):
     noise_prob: float = Field(default=0.3, ge=0.0, le=1.0)
     seed: int = 42
     tick_interval_ms: int = Field(default=100, ge=0)
-    execution_mode: str = Field(
-        default="continuous", pattern="^(classic|continuous)$"
-    )
+    execution_mode: str = Field(default="continuous", pattern="^(classic|continuous)$")
     default_lanes: int = Field(default=1, ge=1)
     traffic_light_percentage: float = Field(default=0.0, ge=0.0, le=1.0)
     traffic_light_green_steps: int = Field(default=10, ge=1)

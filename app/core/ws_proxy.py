@@ -38,7 +38,9 @@ async def _authenticate_ws(token: str | None) -> User | None:
     if not token:
         return None
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.algorithm]
+        )
         username: str | None = payload.get("sub")
         if not username:
             return None
@@ -125,13 +127,9 @@ async def ws_simulation_proxy(websocket: WebSocket, simulation_id: str) -> None:
             )
 
     except websockets.exceptions.ConnectionClosedError as exc:
-        logger.info(
-            "Engine WS closed for simulation_id=%s: %s", simulation_id, exc
-        )
+        logger.info("Engine WS closed for simulation_id=%s: %s", simulation_id, exc)
     except Exception as exc:
-        logger.error(
-            "WS proxy error for simulation_id=%s: %s", simulation_id, exc
-        )
+        logger.error("WS proxy error for simulation_id=%s: %s", simulation_id, exc)
     finally:
         try:
             await websocket.close()
