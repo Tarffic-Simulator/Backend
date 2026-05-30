@@ -77,6 +77,14 @@ async def get_saved_simulation(
         )
     return sim
 
+@router.get("/simulations/", response_model=list[SavedSimulationResponse])
+def list_simulations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return db.query(SavedSimulation).filter(
+        SavedSimulation.user_id == current_user.id
+    ).all()
 
 # ---------------------------------------------------------------------------
 # Save / delete
