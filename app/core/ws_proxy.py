@@ -129,7 +129,12 @@ async def ws_simulation_proxy(websocket: WebSocket, simulation_id: str) -> None:
     except websockets.exceptions.ConnectionClosedError as exc:
         logger.info("Engine WS closed for simulation_id=%s: %s", simulation_id, exc)
     except Exception as exc:
-        logger.error("WS proxy error for simulation_id=%s: %s", simulation_id, exc)
+        logger.error(
+            "Unexpected WS proxy error for simulation_id=%s: %s",
+            simulation_id,
+            exc,
+            exc_info=True,
+        )
     finally:
         try:
             await websocket.close()

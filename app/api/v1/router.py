@@ -9,7 +9,7 @@ from app.core.ws_proxy import ws_simulation_proxy
 api_router = APIRouter()
 
 # Health
-api_router.include_router(health_router, tags=["Health"])
+api_router.include_router(health_router, tags=["Health"], include_in_schema=True)
 
 # Auth
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
