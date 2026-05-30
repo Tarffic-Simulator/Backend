@@ -212,5 +212,3 @@ async def delete_simulation(
         current_user.username,
     )
     return None
-
-
